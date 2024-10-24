@@ -1,0 +1,11 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      # Do not modify the designate network attachment if it already
+      # exists.
+      if ! (oc get net-attach-def | grep designate);
+      then
+         cp ../../common/designate_nad.yaml .
+         oc apply -f designate_nad.yaml
+      fi
