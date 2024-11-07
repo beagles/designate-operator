@@ -77,6 +77,10 @@ type DesignateBackendbind9SpecBase struct {
 	// +kubebuilder:validation:Required
 	// StorageRequest
 	StorageRequest string `json:"storageRequest"`
+
+	// +kubebuilder:validation:Required
+	// NetUtilsImage - NetUtils container image
+	NetUtilsImage string `json:"netUtilsImage"`
 }
 
 // DesignateBackendbind9Status defines the observed state of DesignateBackendbind9

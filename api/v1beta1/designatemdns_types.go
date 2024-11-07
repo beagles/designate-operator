@@ -60,6 +60,10 @@ type DesignateMdnsSpecBase struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec
 	// TLS - Parameters related to the TLS
 	TLS tls.Ca `json:"tls,omitempty"`
+
+	// +kubebuilder:validation:Required
+	// NetUtilsImage - NetUtils container image
+	NetUtilsImage string `json:"netUtilsImage"`
 }
 
 // DesignateMdnsStatus defines the observed state of DesignateMdns
