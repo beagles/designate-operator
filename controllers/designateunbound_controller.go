@@ -268,7 +268,12 @@ func (r *UnboundReconciler) reconcileNormal(ctx context.Context, instance *desig
 	instance.Status.Conditions.MarkTrue(condition.ServiceConfigReadyCondition, condition.ServiceConfigReadyMessage)
 
 	nadList := []networkv1.NetworkAttachmentDefinition{}
-	for _, networkAttachment := range instance.Spec.NetworkAttachments {
+	// If NetworkAttachments are not set, add defaults!
+	attachments := instance.Spec.NetworkAttachments
+	if len(attachments) == 0 {
+		attachments = append(attachments, "designate", "designateext")
+	}
+	for _, networkAttachment := range attachments {
 		nad, err := nad.GetNADWithName(ctx, helper, networkAttachment, instance.Namespace)
 		if err != nil {
 			if k8s_errors.IsNotFound(err) {
