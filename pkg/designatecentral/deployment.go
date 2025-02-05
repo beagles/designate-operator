@@ -44,8 +44,8 @@ func Deployment(
 	// designateGroup := int64(42411)
 
 	serviceName := fmt.Sprintf("%s-central", designate.ServiceName)
-	volumes := getServicePodVolumes(serviceName)
-	volumeMounts := getServicePodVolumeMounts(serviceName)
+	volumes := designate.GetVolumes(serviceName)
+	volumeMounts := designate.GetVolumeMounts(serviceName)
 
 	livenessProbe := &corev1.Probe{
 		// TODO might need tuning

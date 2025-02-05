@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,8 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-// FIXME(dkehn): Adjust this file.
-
 package controllers
 
 import (
@@ -43,9 +41,11 @@ import (
 	designatev1beta1 "github.com/openstack-k8s-operators/designate-operator/api/v1beta1"
 	"github.com/openstack-k8s-operators/designate-operator/pkg/designate"
 	designatecentral "github.com/openstack-k8s-operators/designate-operator/pkg/designatecentral"
+	keystonev1 "github.com/openstack-k8s-operators/keystone-operator/api/v1beta1"
 	"github.com/openstack-k8s-operators/lib-common/modules/common"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/condition"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/deployment"
+	"github.com/openstack-k8s-operators/lib-common/modules/common/endpoint"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/env"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/helper"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/labels"
@@ -412,26 +412,6 @@ func (r *DesignateCentralReconciler) reconcileNormal(ctx context.Context, instan
 	// run check service secrets - end
 
 	//
-	// check for required Designate config maps that should have been created by parent Designate CR
-	//
-
-	parentDesignateName := designate.GetOwningDesignateName(instance)
-	Log.Info(fmt.Sprintf("Reconciling Service '%s' init: parent name: %s", instance.Name, parentDesignateName))
-
-	ctrlResult, err = r.getSecret(ctx, helper, instance, fmt.Sprintf("%s-scripts", parentDesignateName), &configMapVars, "")
-	if err != nil {
-		return ctrlResult, err
-	}
-	ctrlResult, err = r.getSecret(ctx, helper, instance, fmt.Sprintf("%s-config-data", parentDesignateName), &configMapVars, "")
-	// note r.getSecret adds Conditions with condition.InputReadyWaitingMessage
-	// when secret is not found
-	if err != nil {
-		return ctrlResult, err
-	}
-
-	// run check parent Designate CR config maps - end
-
-	//
 	// TLS input validation
 	//
 	// Validate the CA cert secret if provided
@@ -479,7 +459,7 @@ func (r *DesignateCentralReconciler) reconcileNormal(ctx context.Context, instan
 	}
 
 	//
-	// create custom Configmap for this designate volume service
+	// create custom Configmap for this service's config volume
 	//
 	err = r.generateServiceConfigMaps(ctx, helper, instance, &configMapVars)
 	if err != nil {
@@ -756,6 +736,19 @@ func (r *DesignateCentralReconciler) generateServiceConfigMaps(
 		customData[key] = data
 	}
 
+	keystoneAPI, err := keystonev1.GetKeystoneAPI(ctx, h, instance.Namespace, map[string]string{})
+	if err != nil {
+		return err
+	}
+	keystoneInternalURL, err := keystoneAPI.GetEndpoint(endpoint.EndpointInternal)
+	if err != nil {
+		return err
+	}
+	keystonePublicURL, err := keystoneAPI.GetEndpoint(endpoint.EndpointPublic)
+	if err != nil {
+		return err
+	}
+
 	customData[common.CustomServiceConfigFileName] = instance.Spec.CustomServiceConfig
 
 	databaseAccount, dbSecret, err := mariadbv1.GetAccountAndSecret(
@@ -811,8 +804,32 @@ func (r *DesignateCentralReconciler) generateServiceConfigMaps(
 			err.Error()))
 		return err
 	}
+
+	adminPasswordSecret, _, err := secret.GetSecret(ctx, h, instance.Spec.Secret, instance.Namespace)
+	if err != nil {
+		if k8s_errors.IsNotFound(err) {
+			r.GetLogger(ctx).Info(fmt.Sprintf("AdminPassword secret %s not found", instance.Spec.Secret))
+			instance.Status.Conditions.Set(condition.FalseCondition(
+				condition.InputReadyCondition,
+				condition.RequestedReason,
+				condition.SeverityInfo,
+				condition.InputReadyWaitingMessage))
+			return nil
+		}
+		instance.Status.Conditions.Set(condition.FalseCondition(
+			condition.InputReadyCondition,
+			condition.ErrorReason,
+			condition.SeverityWarning,
+			condition.InputReadyErrorMessage,
+			err.Error()))
+		return err
+	}
+
+	templateParameters["AdminPassword"] = string(adminPasswordSecret.Data["DesignatePassword"])
 	templateParameters["TransportURL"] = string(transportURLSecret.Data["transport_url"])
 	templateParameters["ServiceUser"] = instance.Spec.ServiceUser
+	templateParameters["KeystoneInternalURL"] = keystoneInternalURL
+	templateParameters["KeystonePublicURL"] = keystonePublicURL
 
 	cms := []util.Template{
 		// ScriptsConfigMap
