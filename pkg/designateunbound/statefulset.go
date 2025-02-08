@@ -16,6 +16,8 @@ limitations under the License.
 package designateunbound
 
 import (
+	"fmt"
+
 	designatev1beta1 "github.com/openstack-k8s-operators/designate-operator/api/v1beta1"
 	designate "github.com/openstack-k8s-operators/designate-operator/pkg/designate"
 	common "github.com/openstack-k8s-operators/lib-common/modules/common"
@@ -92,6 +94,7 @@ func StatefulSet(instance *designatev1beta1.DesignateUnbound,
 	envVars["KOLLA_CONFIG_STRATEGY"] = env.SetValue("COPY_ALWAYS")
 	envVars["CONFIG_HASH"] = env.SetValue(configHash)
 
+	serviceName := fmt.Sprintf("%s-unbound", designate.ServiceName)
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instance.Name,
@@ -114,7 +117,7 @@ func StatefulSet(instance *designatev1beta1.DesignateUnbound,
 					// volume.
 					Volumes: volumes,
 					Containers: []corev1.Container{{
-						Name:    ServiceName,
+						Name:    serviceName,
 						Image:   instance.Spec.ContainerImage,
 						Command: []string{"/usr/sbin/unbound"},
 						Args: []string{
