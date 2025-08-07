@@ -17,6 +17,8 @@ limitations under the License.
 package designateunbound
 
 const (
-	Component   = "designate-unbound"
-	ServiceName = "designateunbound"
+	Component           = "designate-unbound"
+	ServiceName         = "designateunbound"
+	DefaultJoinSubnetV4 = "100.64.0.0/16"
+	DefaultJoinSubnetV6 = "fd98::/64"
 )

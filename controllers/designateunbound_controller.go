@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	openshiftv1 "github.com/openshift/api/operator/v1"
 	"github.com/openstack-k8s-operators/lib-common/modules/common"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/condition"
 	"github.com/openstack-k8s-operators/lib-common/modules/common/env"
@@ -320,33 +321,8 @@ func (r *UnboundReconciler) reconcileNormal(ctx context.Context, instance *desig
 	}
 	instance.Status.Conditions.MarkTrue(condition.CreateServiceReadyCondition, condition.CreateServiceReadyMessage)
 
-	configMapVars := make(map[string]env.Setter)
-	err := r.generateServiceConfigMaps(ctx, instance, helper, &configMapVars)
-	if err != nil {
-		instance.Status.Conditions.Set(condition.FalseCondition(
-			condition.ServiceConfigReadyCondition,
-			condition.ErrorReason,
-			condition.SeverityWarning,
-			condition.ServiceConfigReadyErrorMessage,
-			err.Error()))
-		return ctrl.Result{}, err
-	}
-
-	//
-	// create hash over all the different input resources to identify if any those changed
-	// and a restart/recreate is required.
-	//
-	inputHash, hashChanged, err := r.createHashOfInputHashes(ctx, instance, configMapVars)
-	if err != nil {
-		return ctrl.Result{}, err
-	} else if hashChanged {
-		// Hash changed and instance status should be updated (which will be done by main defer func),
-		// so we need to return and reconcile again
-		return ctrl.Result{}, nil
-	}
-
-	instance.Status.Conditions.MarkTrue(condition.ServiceConfigReadyCondition, condition.ServiceConfigReadyMessage)
-
+	// We do initial processing of the network attachments before the configs because it influences some of the
+	// automatically configurations.
 	nadList := []networkv1.NetworkAttachmentDefinition{}
 	for _, networkAttachment := range instance.Spec.NetworkAttachments {
 		nad, err := nad.GetNADWithName(ctx, helper, networkAttachment, instance.Namespace)
@@ -374,6 +350,33 @@ func (r *UnboundReconciler) reconcileNormal(ctx context.Context, instance *desig
 			nadList = append(nadList, *nad)
 		}
 	}
+
+	configMapVars := make(map[string]env.Setter)
+	err := r.generateServiceConfigMaps(ctx, instance, helper, &configMapVars, nadList)
+	if err != nil {
+		instance.Status.Conditions.Set(condition.FalseCondition(
+			condition.ServiceConfigReadyCondition,
+			condition.ErrorReason,
+			condition.SeverityWarning,
+			condition.ServiceConfigReadyErrorMessage,
+			err.Error()))
+		return ctrl.Result{}, err
+	}
+
+	//
+	// create hash over all the different input resources to identify if any those changed
+	// and a restart/recreate is required.
+	//
+	inputHash, hashChanged, err := r.createHashOfInputHashes(ctx, instance, configMapVars)
+	if err != nil {
+		return ctrl.Result{}, err
+	} else if hashChanged {
+		// Hash changed and instance status should be updated (which will be done by main defer func),
+		// so we need to return and reconcile again
+		return ctrl.Result{}, nil
+	}
+
+	instance.Status.Conditions.MarkTrue(condition.ServiceConfigReadyCondition, condition.ServiceConfigReadyMessage)
 
 	serviceAnnotations, err := nad.EnsureNetworksAnnotation(nadList)
 	if err != nil {
@@ -540,6 +543,7 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 	instance *designatev1.DesignateUnbound,
 	h *helper.Helper,
 	envVars *map[string]env.Setter,
+	nadList []networkv1.NetworkAttachmentDefinition,
 ) error {
 	Log := r.GetLogger(ctx)
 	Log.Info("Generating service config map")
@@ -551,6 +555,9 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 
 	templateParameters := make(map[string]interface{})
 
+	//
+	// Create stub zone configuration data from predictable IP map.
+	//
 	stubZoneData := make([]StubZoneTmplRec, len(instance.Spec.StubZones))
 	if len(instance.Spec.StubZones) > 0 {
 		bindIPMap := &corev1.ConfigMap{}
@@ -577,6 +584,34 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 	}
 	templateParameters["StubZones"] = stubZoneData
 
+	// TODO(beagles): There are situations where the allowCidrs should be overriddable, do we want to support that at the API level or
+	// customServiceConfig
+	// Note: ideally we would get the CIDR from the cluster info via the cluster-network-operator
+	allowCidrs := []string{designateunbound.DefaultJoinSubnetV4, designateunbound.DefaultJoinSubnetV6}
+	// TODO(beagles): create entries for each network attachment.
+	templateParameters["AllowCidrs"] = allowCidrs
+	clusterNetwork := &openshiftv1.Network{}
+	err := h.GetClient().Get(ctx, types.NamespacedName{Name: "cluster"}, clusterNetwork)
+	if err != nil {
+		return err
+	}
+	if clusterNetwork.Spec.DefaultNetwork.OVNKubernetesConfig != nil {
+		if clusterNetwork.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4 != nil {
+			allowCidrs = append(allowCidrs, clusterNetwork.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4.InternalJoinSubnet)
+		}
+		if clusterNetwork.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6 != nil {
+			allowCidrs = append(allowCidrs, clusterNetwork.Spec.DefaultNetwork.OVNKubernetesConfig.IPv6.InternalJoinSubnet)
+		}
+	}
+
+	for _, nad := range nadList {
+		nadConfig, err := designate.GetNADConfig(&nad)
+		if err != nil {
+			return err
+		}
+		allowCidrs = append(allowCidrs, nadConfig.IPAM.CIDR.String())
+	}
+
 	cms := []util.Template{
 		// ConfigMap
 		{
@@ -589,7 +624,7 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 			Labels:        cmLabels,
 		},
 	}
-	err := secret.EnsureSecrets(ctx, h, instance, cms, envVars)
+	err = secret.EnsureSecrets(ctx, h, instance, cms, envVars)
 
 	if err != nil {
 		Log.Error(err, "uanble to process config map")
