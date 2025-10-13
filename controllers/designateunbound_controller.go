@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -639,11 +640,11 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 		}
 		bindIPs := make([]string, len(bindIPMap.Data))
 		keyTmpl := "bind_address_%d"
-		for i := 0; i < len(bindIPMap.Data); i++ {
+		for i := range len(bindIPMap.Data) {
 			bindIPs[i] = bindIPMap.Data[fmt.Sprintf(keyTmpl, i)]
 		}
 
-		for i := 0; i < len(instance.Spec.StubZones); i++ {
+		for i := range len(instance.Spec.StubZones) {
 			stubZoneData[i] = StubZoneTmplRec{
 				Name:    instance.Spec.StubZones[i].Name,
 				Options: stubZoneDefaults(instance.Spec.StubZones[i].Options),
@@ -664,6 +665,9 @@ func (r *UnboundReconciler) generateServiceConfigMaps(
 		Log.Error(nadErr, "unable to get CIDRs from network attachment definitions")
 	}
 	allowCidrs = append(allowCidrs, nadCIDRs...)
+
+	// Make sure randomizing order doesn't affect the config hash and cause spurious restarts.
+	sort.Strings(allowCidrs)
 	templateParameters["AllowCidrs"] = allowCidrs
 
 	cms := []util.Template{
