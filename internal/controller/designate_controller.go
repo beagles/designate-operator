@@ -1706,7 +1706,7 @@ func (r *DesignateReconciler) generateServiceConfigMaps(
 	}
 	templateParameters["AdminPassword"] = string(adminPasswordSecret.Data["DesignatePassword"])
 
-	redisIPs, err := getRedisServiceIPs(ctx, instance, h)
+	backendURL, err := getRedisUrl(ctx, instance, h)
 	if err != nil {
 		instance.Status.Conditions.Set(condition.FalseCondition(
 			condition.InputReadyCondition,
@@ -1716,25 +1716,15 @@ func (r *DesignateReconciler) generateServiceConfigMaps(
 			err.Error()))
 		return err
 	}
-
-	if len(redisIPs) == 0 {
-		err = designate.ErrRedisRequired
-		instance.Status.Conditions.Set(condition.FalseCondition(
-			condition.InputReadyCondition,
-			condition.ErrorReason,
-			condition.SeverityWarning,
-			condition.InputReadyErrorMessage,
-			err.Error()))
-		return err
-	}
-
-	sort.Strings(redisIPs)
-
-	// TODO(beagles): This should be set to sentinel services! There seems to be a problem with sentinels at them moment.
-	// We should also check for IPv6 validity.
-	backendURL := fmt.Sprintf("redis://%s:6379/", redisIPs[0])
 	if tlsCfg != nil {
-		backendURL = fmt.Sprintf("%s?ssl=true", backendURL)
+		sep := "?"
+		if strings.Contains(backendURL, "?") {
+			sep = "&"
+		}
+		backendURL += sep + "ssl=true"
+		if strings.Contains(backendURL, "sentinel=") {
+			backendURL += "&sentinel_ssl=true&ssl_cert_reqs=None"
+		}
 	}
 	templateParameters["CoordinationBackendURL"] = backendURL
 
@@ -2358,6 +2348,51 @@ func (r *DesignateReconciler) checkDesignateUnboundGeneration(
 		}
 	}
 	return true, nil
+}
+
+func getRedisUrl(ctx context.Context, instance *designatev1beta1.Designate, helper *helper.Helper) (string, error) {
+	// Check the StatefulSet for instance.Spec.RedisServiceName and get the replica count. If the replica count
+	// is greater than 1, use the sentinel hosts. The quorum protocol for sentinels requires more than three to
+	// be defined. Take the replica count (not available or ready) because we want to configure for the intended
+	// state, not the current availability.
+	var replicaCount int32 = 1
+	sts, err := helper.GetKClient().AppsV1().StatefulSets(instance.Namespace).Get(
+		ctx, fmt.Sprintf("%s-redis", instance.Spec.RedisServiceName), metav1.GetOptions{})
+	switch {
+	case err == nil:
+		if sts.Spec.Replicas != nil && *sts.Spec.Replicas > 0 {
+			replicaCount = *sts.Spec.Replicas
+		}
+	case k8s_errors.IsNotFound(err):
+		// No StatefulSet yet (e.g. Redis not fully provisioned); treat as single replica.
+	default:
+		return "", fmt.Errorf("%w: %w", designate.ErrGetRedisStatefulSet, err)
+	}
+
+	if replicaCount <= 1 {
+		getOptions := metav1.GetOptions{}
+		service, err := helper.GetKClient().CoreV1().Services(instance.Namespace).Get(ctx, instance.Spec.RedisServiceName, getOptions)
+		if err != nil {
+			return "", err
+		}
+		if len(service.Spec.ClusterIPs) == 0 {
+			return "", designate.ErrRedisRequired
+		}
+		return fmt.Sprintf("redis://%s:6379/", service.Spec.ClusterIPs[0]), nil
+	}
+
+	// tooz: redis://<sentinel>:<port>?sentinel=<master>&sentinel_fallback=host:port&...
+	crm := fmt.Sprintf("%s-redis", instance.Spec.RedisServiceName)
+	ns := instance.Namespace
+	first := fmt.Sprintf("%s-0.%s.%s.svc.cluster.local", crm, crm, ns)
+	u := fmt.Sprintf("redis://%s:%d?sentinel=%s", first, designate.SentinelPort, designate.SentinelMasterName)
+	var b strings.Builder
+	b.WriteString(u)
+	for i := int32(1); i < replicaCount; i++ {
+		host := fmt.Sprintf("%s-%d.%s.%s.svc.cluster.local", crm, i, crm, ns)
+		b.WriteString(fmt.Sprintf("&sentinel_fallback=%s:%d", host, designate.SentinelPort))
+	}
+	return b.String(), nil
 }
 
 func getRedisServiceIPs(

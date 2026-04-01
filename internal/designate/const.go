@@ -101,4 +101,10 @@ const (
 
 	// SharedTSIGKeyName is the name of the shared TSIG key used for all non-default pools
 	SharedTSIGKeyName = "multipool-shared-key"
+
+	// SentinelPort is the Redis Sentinel listen port (must match infra-operator Redis).
+	SentinelPort = 26379
+
+	// SentinelMasterName must match the logical master name monitored by Redis Sentinel.
+	SentinelMasterName = "redis"
 )

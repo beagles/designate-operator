@@ -37,6 +37,7 @@ import (
 var (
 	// Controller errors
 	ErrRedisRequired               = errors.New("unable to configure designate deployment without Redis")
+	ErrGetRedisStatefulSet         = errors.New("get Redis StatefulSet")
 	ErrNetworkAttachmentConfig     = errors.New("not all pods have interfaces with ips as configured in NetworkAttachments")
 	ErrNetworkAttachmentNotFound   = errors.New("unable to locate network attachment")
 	ErrControlNetworkNotConfigured = errors.New("designate control network attachment not configured, check NetworkAttachments and ControlNetworkName")
