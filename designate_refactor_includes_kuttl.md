@@ -3,16 +3,16 @@
   ▘▘ ▝▝    ~/ng/designate-operator
 
 
-❯ /model                                                                        
+❯ /model
   ⎿  Set model to Opus 4.6 and saved as your default for new sessions
 
-❯ The DesignateBackendbind9 controller and multipool controller as well as the  
-  main designate controller have become an organizational mess. For example,    
-  code has been placed in backend controller has nothing specific to backend    
-  reconciliation and relies more on the core controller. I need a strategy for  
-  refactoring these implementation files into better organized, easier to       
-  understand and navigate and potentially easier to test set of files.          
-  Additional files where appropriate are acceptable.                            
+❯ The DesignateBackendbind9 controller and multipool controller as well as the
+  main designate controller have become an organizational mess. For example,
+  code has been placed in backend controller has nothing specific to backend
+  reconciliation and relies more on the core controller. I need a strategy for
+  refactoring these implementation files into better organized, easier to
+  understand and navigate and potentially easier to test set of files.
+  Additional files where appropriate are acceptable.
 
 ● Let me explore the current state of these controllers to understand the
   organizational issues before recommending a strategy.
@@ -34,6 +34,17 @@
   ---
   Refactoring Strategy
 
+## Jira notes
+
+  One epic for the entire refactor with an initial pass at stories and/or tasks
+  to be initially estimated but open to further refinement (including breaking
+  out or combining if impractically small).
+
+
+
+
+
+
   Problems Identified
 
   1. designatebackendbind9_multipool.go (1898 lines) — the single biggest issue.
@@ -41,16 +52,20 @@
   (DesignateBackendbind9Reconciler and DesignateReconciler), plus standalone
   helpers, TSIG secret management, service management, cleanup logic, and config
   hashing — all in one file.
+
   2. designate_controller.go (2605 lines) — has 7 nearly-identical
   checkDesignate*Generation methods (copy-paste with type swapped), 7
   nearly-identical *CreateOrUpdate methods, utility functions (getOrDefault,
   getSecret), and the actual reconciliation logic all in one file.
+
   3. Cross-cutting ownership violation — DesignateReconciler methods
   (reconcileBindConfigMaps, reconcileMultipoolBindConfigMaps,
   reconcileSinglePoolBindConfigMap) live in the backendbind9 multipool file
   instead of in a designate controller file.
 
   Proposed File Splits
+
+  *file split work cannot be done in parallel because of conficts*
 
   A. designate_controller.go → 3 files
 
@@ -61,11 +76,13 @@
   handleConfigMap, getNSRecords, validatePoolRemovals,
   findDesignatesForMultipoolConfigMap
   Why: Core reconciliation — what you'd read to understand the controller's flow
+
   ────────────────────────────────────────
   New file: designate_subresources.go
   Contents: All 7 *CreateOrUpdate methods + copyDesignateTemplateItems +
   getExternalMasterServiceIPs
   Why: Sub-CR lifecycle management — mechanical CRUD, rarely changes
+
   ────────────────────────────────────────
   New file: designate_generation.go
   Contents: All 7 checkDesignate*Generation methods — or better, replace them
@@ -75,6 +92,8 @@
 
   Move getOrDefault and getSecret into designate_common.go (which already exists
   and holds shared utilities).
+
+
 
   B. designatebackendbind9_multipool.go → 4 files
 
@@ -113,6 +132,7 @@
   designatebackendbind9_controller.go or a small
   designatebackendbind9_helpers.go if the main file is already large enough.
 
+
   C. internal/designate/ package — minor cleanup
 
   The internal/designate/ package is already reasonably organized by concern
@@ -129,19 +149,20 @@
   1. Start with the cross-cutting fix — move the 3 DesignateReconciler methods
   out of designatebackendbind9_multipool.go into designate_bind_configmaps.go.
   This is the lowest-risk, highest-clarity-gain change and it compiles
-  independently.
+  independently. *Jira Task A*
   2. Split the multipool file into multipool/tsig/cleanup. Pure file moves
-  within the same package — no import or API changes needed.
+  within the same package — no import or API changes needed.*Jira Task B*
   3. Split designate_controller.go — extract subresources and generation checks.
-  Again, same package, no import changes.
+  Again, same package, no import changes.*Jira Task C*
   4. Collapse the generation checks into a generic function. This is the only
   step that changes logic (mildly), so it should be a separate commit with its
-  own test pass.
+  own test pass.*Jira Task D* - this may not be a good idea ^TM if it breaks
+  mainainability across operators - maybe needs a spike associated with this.
 
   Each step is independently compilable and testable. No step changes any public
   API or cross-package interface.
 
-  What NOT to do
+  What NOT to do *This should go in the EPIC*
 
   - Don't create new packages for the split files — they're all methods on
   existing reconciler types in package controller, so they must stay there.
@@ -157,16 +178,16 @@
 
 ※ recap: You asked for a refactoring strategy for the designate, backendbind9, and multipool controller files. I proposed a plan splitting them into smaller, better-organized files. Next step is your go-ahead to start implementing, beginning with moving misplaced DesignateReconciler methods. (disable recaps in /config)
 
-❯ /export ~/designate_refactor.md                                               
+❯ /export ~/designate_refactor.md
   ⎿  Conversation exported to: /home/beagles/designate_refactor.md
 
 ※ recap: You asked for a refactoring strategy for the disorganized designate, backendbind9, and multipool controller files. I proposed a plan splitting them into smaller, well-scoped files. Next step: you confirming whether to start implementing, beginning with moving misplaced DesignateReconciler methods. (disable recaps in /config)
 
-❯ review kuttl tests, analyze coverage and describe changes that would: be      
-  necessary because of these refactorings; additions that would help check for  
-  regressions                                                                   
-    during refactoring; and as kuttl is also part of the code, remove redundant 
-  tests that do not provide additional specific value.                          
+❯ review kuttl tests, analyze coverage and describe changes that would: be
+  necessary because of these refactorings; additions that would help check for
+  regressions
+    during refactoring; and as kuttl is also part of the code, remove redundant
+  tests that do not provide additional specific value.
 
   Thought for 4s (ctrl+o to expand)
 
@@ -197,7 +218,8 @@
 
   The kuttl suite has solid coverage of the multipool happy path but has gaps
   that would catch regressions introduced if the refactoring accidentally drops
-  or miswires logic:
+  or miswires logic: *this is not in the scope of a refactor but would be
+  valuable to check for regressions*
 
   A. Multipool ConfigMap webhook validation (missing entirely)
 
@@ -249,7 +271,7 @@
   per-pool ConfigMap has the right number of bind addresses matching its
   bindReplicas.
 
-  3. Redundant Tests That Can Be Removed
+  3. Redundant Tests That Can Be Removed *a single jira for removal*
 
   A. basic/01-assert.yaml duplicates common/assert-sample-deployment.yaml
 
