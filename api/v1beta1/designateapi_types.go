@@ -166,6 +166,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateAPI{}, &DesignateAPIList{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateAPI) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateAPI items
+func (list *DesignateAPIList) GetItems() []DesignateAPI {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateAPI) IsReady() bool {
 	return instance.Status.ReadyCount == *(instance.Spec.Replicas)

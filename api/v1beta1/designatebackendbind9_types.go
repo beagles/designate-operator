@@ -146,6 +146,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateBackendbind9{}, &DesignateBackendbind9List{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateBackendbind9) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateBackendbind9 items
+func (list *DesignateBackendbind9List) GetItems() []DesignateBackendbind9 {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateBackendbind9) IsReady() bool {
 	return instance.Status.ReadyCount == *(instance.Spec.Replicas)

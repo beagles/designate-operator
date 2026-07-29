@@ -146,6 +146,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateMdns{}, &DesignateMdnsList{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateMdns) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateMdns items
+func (list *DesignateMdnsList) GetItems() []DesignateMdns {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateMdns) IsReady() bool {
 	return instance.Status.Conditions.IsTrue(condition.DeploymentReadyCondition) &&

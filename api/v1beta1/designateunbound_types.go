@@ -130,6 +130,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateUnbound{}, &DesignateUnboundList{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateUnbound) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateUnbound items
+func (list *DesignateUnboundList) GetItems() []DesignateUnbound {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateUnbound) IsReady() bool {
 	return instance.Status.ReadyCount == *(instance.Spec.Replicas)

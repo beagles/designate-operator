@@ -127,6 +127,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateProducer{}, &DesignateProducerList{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateProducer) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateProducer items
+func (list *DesignateProducerList) GetItems() []DesignateProducer {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateProducer) IsReady() bool {
 	return instance.Status.ReadyCount == *(instance.Spec.Replicas)

@@ -121,6 +121,16 @@ func init() {
 	SchemeBuilder.Register(&DesignateWorker{}, &DesignateWorkerList{})
 }
 
+// GetObservedGeneration - returns the last generation observed by the controller
+func (instance *DesignateWorker) GetObservedGeneration() int64 {
+	return instance.Status.ObservedGeneration
+}
+
+// GetItems - returns the list of DesignateWorker items
+func (list *DesignateWorkerList) GetItems() []DesignateWorker {
+	return list.Items
+}
+
 // IsReady - returns true if service is ready to serve requests
 func (instance DesignateWorker) IsReady() bool {
 	return instance.Status.ReadyCount == *(instance.Spec.Replicas)

@@ -2451,149 +2451,99 @@ func (r *DesignateReconciler) unboundStatefulSetCreateOrUpdate(
 	return statefulSet, op, err
 }
 
-// checkDesignateAPIGeneration -
-func (r *DesignateReconciler) checkDesignateAPIGeneration(
+// generationObject constrains the pointer type of a generation-tracked CRD:
+// it must be a client.Object and expose its Status.ObservedGeneration.
+type generationObject[T any] interface {
+	*T
+	client.Object
+	GetObservedGeneration() int64
+}
+
+// generationList constrains a CRD's list type: it must be a client.ObjectList
+// and expose its Items as a plain slice.
+type generationList[T any] interface {
+	client.ObjectList
+	GetItems() []T
+}
+
+// checkGenerationList lists all instances of a CRD in instance's namespace and
+// reports whether every one of them has been observed at its current generation.
+func checkGeneration[T any, PT generationObject[T], L generationList[T]](
+	r *DesignateReconciler,
 	instance *designatev1beta1.Designate,
+	list L,
+	kind string,
 ) (bool, error) {
 	Log := r.GetLogger(context.Background())
-	api := &designatev1beta1.DesignateAPIList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(instance.Namespace),
 	}
-	if err := r.List(context.Background(), api, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateAPI %w")
+	if err := r.List(context.Background(), list, listOpts...); err != nil {
+		Log.Error(err, fmt.Sprintf("Unable to retrieve %s", kind))
 		return false, err
 	}
-	for _, item := range api.Items {
-		if item.Generation != item.Status.ObservedGeneration {
+	items := list.GetItems()
+	for i := range items {
+		obj := PT(&items[i])
+		if obj.GetGeneration() != obj.GetObservedGeneration() {
 			return false, nil
 		}
 	}
 	return true, nil
+}
+
+// checkDesignateAPIGeneration -
+func (r *DesignateReconciler) checkDesignateAPIGeneration(
+	instance *designatev1beta1.Designate,
+) (bool, error) {
+	return checkGeneration[designatev1beta1.DesignateAPI](
+		r, instance, &designatev1beta1.DesignateAPIList{}, "DesignateAPI")
 }
 
 // checkDesignateCentralGeneration -
 func (r *DesignateReconciler) checkDesignateCentralGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	central := &designatev1beta1.DesignateCentralList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), central, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateCentral %w")
-		return false, err
-	}
-	for _, item := range central.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateCentral](
+		r, instance, &designatev1beta1.DesignateCentralList{}, "DesignateCentral")
 }
 
 // checkDesignateWorkerGeneration -
 func (r *DesignateReconciler) checkDesignateWorkerGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	worker := &designatev1beta1.DesignateWorkerList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), worker, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateWorker %w")
-		return false, err
-	}
-	for _, item := range worker.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateWorker](
+		r, instance, &designatev1beta1.DesignateWorkerList{}, "DesignateWorker")
 }
 
 // checkDesignateMdnsGeneration -
 func (r *DesignateReconciler) checkDesignateMdnsGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	mdns := &designatev1beta1.DesignateMdnsList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), mdns, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateWorker %w")
-		return false, err
-	}
-	for _, item := range mdns.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateMdns](
+		r, instance, &designatev1beta1.DesignateMdnsList{}, "DesignateMdns")
 }
 
 // checkDesignateProducerGeneration -
 func (r *DesignateReconciler) checkDesignateProducerGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	prd := &designatev1beta1.DesignateProducerList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), prd, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateProducer %w")
-		return false, err
-	}
-	for _, item := range prd.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateProducer](
+		r, instance, &designatev1beta1.DesignateProducerList{}, "DesignateProducer")
 }
 
 // checkDesignateBindGeneration -
 func (r *DesignateReconciler) checkDesignateBindGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	prd := &designatev1beta1.DesignateBackendbind9List{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), prd, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateBind %w")
-		return false, err
-	}
-	for _, item := range prd.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateBackendbind9](
+		r, instance, &designatev1beta1.DesignateBackendbind9List{}, "DesignateBackendbind9")
 }
 
 // checkDesignateUnboundGeneration -
 func (r *DesignateReconciler) checkDesignateUnboundGeneration(
 	instance *designatev1beta1.Designate,
 ) (bool, error) {
-	Log := r.GetLogger(context.Background())
-	prd := &designatev1beta1.DesignateUnboundList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(instance.Namespace),
-	}
-	if err := r.List(context.Background(), prd, listOpts...); err != nil {
-		Log.Error(err, "Unable to retrieve DesignateUnbound %w")
-		return false, err
-	}
-	for _, item := range prd.Items {
-		if item.Generation != item.Status.ObservedGeneration {
-			return false, nil
-		}
-	}
-	return true, nil
+	return checkGeneration[designatev1beta1.DesignateUnbound](
+		r, instance, &designatev1beta1.DesignateUnboundList{}, "DesignateUnbound")
 }
