@@ -136,7 +136,7 @@ func StatefulSet(
 								"/usr/sbin/named",
 							},
 							Args: []string{
-								"-g", "-d", "3",
+								"-g", "-d",
 								"-u", "named",
 								"-c", "/etc/named.conf", "-f",
 							},
